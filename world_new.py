@@ -2,7 +2,7 @@ import open3d as o3d
 import numpy as np
 
 import numpy as np
-
+from scipy.spatial.transform import Rotation
 
 def umeyama(X, Y):
     """
@@ -65,13 +65,13 @@ right_transform = np.array([
     [0., 0., 0., 1.]])
 right_transform[:3, -1] = right_transform[:3, -1] / 1000
 print(("--left 求逆--"))
-left_inv_transform = np.linalg.inv(left_transform)
+left_to_camera_transform = np.linalg.inv(left_transform)
 print(("--right 求逆--"))
-right_inv_transform = np.linalg.inv(right_transform)
+right_to_camera_transform = np.linalg.inv(right_transform)
 
 
-left_z_dir = (left_inv_transform[0:3,0:3] @ np.array([0., 0., 1.])[:, np.newaxis])[:, 0]
-right_z_dir = (right_inv_transform[0:3,0:3] @ np.array([0., 0., 1.])[:, np.newaxis])[:, 0]
+left_z_dir = (left_to_camera_transform[0:3,0:3] @ np.array([0., 0., 1.])[:, np.newaxis])[:, 0]
+right_z_dir = (right_to_camera_transform[0:3,0:3] @ np.array([0., 0., 1.])[:, np.newaxis])[:, 0]
 
 camera_origin = np.array([0., 0., 0.])
 camera_x_dir = np.array([1., 0., 0.])
@@ -80,8 +80,8 @@ camera_z_dir = np.array([0., 0., 1.])
 
 world_z_dir = (left_z_dir + right_z_dir) / 2
 world_z_dir = world_z_dir / np.linalg.norm(world_z_dir)
-left_origin = left_inv_transform[:3, -1]
-right_origin = right_inv_transform[:3, -1]
+left_origin = left_to_camera_transform[:3, -1]
+right_origin = right_to_camera_transform[:3, -1]
 world_origin = (left_origin + right_origin) / 2
 world_x_dir = (right_origin - left_origin) / np.linalg.norm(right_origin - left_origin)
 
@@ -102,11 +102,23 @@ camera_sample_pts_pcd.points = o3d.utility.Vector3dVector(camera_sample_pts)
 
 c, R, t = umeyama(camera_sample_pts.T, world_sample_pts.T)
 print(f"c: {c}, R: {R}, t: {t}")
-camera_to_world_transform = np.concatenate([np.concatenate([R, t], axis=1), np.array([[0., 0., 0., 1.]])], axis=0)
-print(camera_to_world_transform)
+world_to_camera_transform = np.concatenate([np.concatenate([R, t], axis=1), np.array([[0., 0., 0., 1.]])], axis=0)
+print(world_to_camera_transform)
 
-world = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5).transform(camera_to_world_transform)
+world = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5).transform(world_to_camera_transform)
 camera = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1,origin=[0,0,0])
-left = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2).transform(left_inv_transform)
-right = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2).transform(right_inv_transform)
-o3d.visualization.draw_geometries([camera, left, right, world])
+left = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2).transform(left_to_camera_transform)
+right = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2).transform(right_to_camera_transform)
+o3d.visualization.draw_geometries([camera, left, right, world])  # camera coord system
+
+world_to_left_transform = np.linalg.inv(left_to_camera_transform) @ world_to_camera_transform
+world_to_right_trasnform = np.linalg.inv(right_to_camera_transform) @ world_to_camera_transform
+world_in_world = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5)
+left_in_world = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2).transform(np.linalg.inv(world_to_left_transform))
+right_in_world = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2).transform(np.linalg.inv(world_to_right_trasnform))
+# o3d.visualization.draw_geometries([world_in_world, left_in_world, right_in_world])  # world coord system
+
+left_rpy_in_world = Rotation.from_matrix(np.linalg.inv(world_to_left_transform)[:3, :3]).as_euler('xyz')
+right_rpy_in_world = Rotation.from_matrix(np.linalg.inv(world_to_right_trasnform)[:3, :3]).as_euler('xyz')
+print(f'left_rpy_in_world: {left_rpy_in_world}')
+print(f'right_rpy_in_world: {right_rpy_in_world}')
